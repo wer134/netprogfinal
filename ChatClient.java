@@ -1,56 +1,74 @@
-import java.io.IOException;
-import java.io.PrintWriter;
-import java.net.DatagramPacket;
-import java.net.DatagramSocket;
-import java.net.InetAddress;
-import java.net.Socket;
-import java.util.Scanner;
+import java.io.*;
+import java.net.*;
 
 public class ChatClient {
     public static void main(String[] args) throws Exception {
-        String myId = "user2";
-        String myIp = InetAddress.getLocalHost().getHostAddress();
-        int myPort = 9001;
+        BufferedReader stdIn = new BufferedReader(new InputStreamReader(System.in));
 
-        // 1. Register to RegisterServer
-        DatagramSocket udpSocket = new DatagramSocket();
-        String registerMsg = "REGISTER " + myId + " " + myIp + " " + myPort;
-        byte[] data = registerMsg.getBytes();
-        DatagramPacket packet = new DatagramPacket(data, data.length, InetAddress.getByName("localhost"), 8888);
-        udpSocket.send(packet);
+        // Register Server에 내 정보 등록
+        System.out.print("Enter your ID: ");
+        String myId = stdIn.readLine();
 
-        // 2. Query for another user
-        Scanner sc = new Scanner(System.in);
+        System.out.print("Enter your port number for chatting: ");
+        int myPort = Integer.parseInt(stdIn.readLine());
+
+        // 내 채팅 서버 동작 (상대방이 접속할 수 있게)
+        new ChatServer(myPort).start();
+
+        // RegisterServer에 등록
+        Socket regSocket = new Socket("localhost", 8888);
+        PrintWriter regOut = new PrintWriter(regSocket.getOutputStream(), true);
+        BufferedReader regIn = new BufferedReader(new InputStreamReader(regSocket.getInputStream()));
+        regOut.println("REGISTER " + myId + " 127.0.1.1 " + myPort);
+        regIn.readLine(); // "OK"
+        regSocket.close();
+
+        // 상대방 ID 입력받아 RegisterServer에 쿼리
         System.out.print("Enter target ID: ");
-        String targetId = sc.nextLine();
-        String query = "QUERY " + targetId;
-        udpSocket.send(new DatagramPacket(query.getBytes(), query.length(), packet.getAddress(), 8888));
+        String targetId = stdIn.readLine();
 
-        DatagramPacket response = new DatagramPacket(new byte[1024], 1024);
-        udpSocket.receive(response);
-        String resp = new String(response.getData(), 0, response.getLength());
+        Socket querySocket = new Socket("localhost", 8888);
+        PrintWriter queryOut = new PrintWriter(querySocket.getOutputStream(), true);
+        BufferedReader queryIn = new BufferedReader(new InputStreamReader(querySocket.getInputStream()));
+        queryOut.println("QUERY " + targetId);
 
-        if (!resp.startsWith("FOUND")) {
+        String resp = queryIn.readLine();
+        if (resp.startsWith("FOUND")) {
+            String[] tokens = resp.split(" ");
+            String ip = tokens[1];
+            int port = Integer.parseInt(tokens[2]);
+            System.out.println("상대방: " + ip + ":" + port + " 연결 시도...");
+
+            // 소켓 연결해서 메시지 송수신
+            Socket chatSocket = new Socket(ip, port);
+            BufferedReader in = new BufferedReader(new InputStreamReader(chatSocket.getInputStream()));
+            PrintWriter out = new PrintWriter(chatSocket.getOutputStream(), true);
+
+            // 송수신 쓰레드 분리
+            Thread receive = new Thread(() -> {
+                String msg;
+                try {
+                    while ((msg = in.readLine()) != null) {
+                        System.out.println("상대: " + msg);
+                    }
+                } catch (IOException e) { }
+            });
+            receive.start();
+
+            String msg;
+            while ((msg = stdIn.readLine()) != null) {
+                out.println(msg);
+
+                // RegisterServer로 채팅 로그 보내기
+                Socket logSocket = new Socket("localhost", 8888);
+                PrintWriter logOut = new PrintWriter(logSocket.getOutputStream(), true);
+                logOut.println("MESSAGE " + myId + " " + targetId + " " + msg);
+                logSocket.close();
+            }
+        } else {
             System.out.println("User not found");
-            return;
         }
-
-        String[] ipPort = resp.split(" ")[1].split(":");
-        Socket tcpSocket = new Socket(ipPort[0], Integer.parseInt(ipPort[1]));
-
-        // 3. Start chatting
-        new Thread(() -> {
-            try (Scanner in = new Scanner(tcpSocket.getInputStream())) {
-                while (in.hasNextLine())
-                    System.out.println("[RECV] " + in.nextLine());
-            } catch (IOException e) {}
-        }).start();
-
-        PrintWriter out = new PrintWriter(tcpSocket.getOutputStream(), true);
-        while (true) {
-            String line = sc.nextLine();
-            out.println(line);
-        }
+        querySocket.close();
     }
 }
 

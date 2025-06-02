@@ -1,42 +1,76 @@
-import java.net.DatagramPacket;
-import java.net.DatagramSocket;
-import java.net.InetAddress;
-import java.util.HashMap;
-import java.util.Map;
+import java.io.*;
+import java.net.*;
+import java.util.*;
 
 public class RegisterServer {
     private static final int PORT = 8888;
-    private static Map<String, String> registry = new HashMap<>();
+    private static Map<String, UserInfo> users = new HashMap<>();
 
-    public static void main(String[] args) throws Exception {
-        DatagramSocket socket = new DatagramSocket(PORT);
-        byte[] buffer = new byte[1024];
+    public static void main(String[] args) throws IOException {
+        ServerSocket serverSocket = new ServerSocket(PORT);
+        System.out.println("RegisterServer가 포트 " + PORT + "에서 대기 중입니다...");
+        printUserList();
 
         while (true) {
-            DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-            socket.receive(packet);
-            String msg = new String(packet.getData(), 0, packet.getLength());
-
-            String response = handle(msg.trim());
-            byte[] responseData = response.getBytes();
-            DatagramPacket responsePacket = new DatagramPacket(
-                responseData, responseData.length, packet.getAddress(), packet.getPort());
-            socket.send(responsePacket);
+            Socket socket = serverSocket.accept();
+            new RegisterHandler(socket).start();
         }
     }
 
-    private static String handle(String msg) {
-        String[] parts = msg.split(" ");
-        switch (parts[0]) {
-            case "REGISTER":
-                registry.put(parts[1], parts[2] + ":" + parts[3]);
-                return "OK";
-            case "QUERY":
-                return registry.containsKey(parts[1])
-                        ? "FOUND " + registry.get(parts[1])
-                        : "NOT_FOUND";
-            default:
-                return "ERROR Unknown Command";
+    private static synchronized void printUserList() {
+        System.out.println("==== 현재 등록된 사용자 목록 ====");
+        if (users.isEmpty()) {
+            System.out.println("등록된 사용자가 없습니다.");
+        } else {
+            for (UserInfo u : users.values()) {
+                System.out.println(u.getId() + " -> " + u.getIp() + ":" + u.getPort());
+            }
+        }
+        System.out.println("===============================");
+    }
+
+    static class RegisterHandler extends Thread {
+        Socket socket;
+        RegisterHandler(Socket socket) { this.socket = socket; }
+        public void run() {
+            try (
+                BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                PrintWriter out = new PrintWriter(socket.getOutputStream(), true)
+            ) {
+                String request = in.readLine();
+                if (request == null) return;
+                System.out.println("수신된 요청: " + request + " from " + socket.getRemoteSocketAddress());
+
+                if (request.startsWith("REGISTER")) {
+                    String[] tokens = request.split(" ");
+                    String id = tokens[1], ip = tokens[2], port = tokens[3];
+                    users.put(id, new UserInfo(id, ip, Integer.parseInt(port)));
+                    System.out.println("등록 완료: " + id + " -> " + ip + ":" + port);
+                    out.println("OK");
+                    printUserList();
+                } else if (request.startsWith("QUERY")) {
+                    String[] tokens = request.split(" ");
+                    String id = tokens[1];
+                    UserInfo user = users.get(id);
+                    if (user != null) {
+                        System.out.println("쿼리 성공: " + id + " -> " + user.getIp() + ":" + user.getPort());
+                        out.println("FOUND " + user.getIp() + " " + user.getPort());
+                    } else {
+                        System.out.println("쿼리 실패: " + id);
+                        out.println("NOT_FOUND");
+                    }
+                    printUserList();
+                } else if (request.startsWith("MESSAGE")) {
+                    // MESSAGE senderID targetID content
+                    String[] tokens = request.split(" ", 4);
+                    String sender = tokens[1];
+                    String target = tokens[2];
+                    String content = tokens.length >= 4 ? tokens[3] : "";
+                    System.out.println("[채팅로그] " + sender + " -> " + target + " : " + content);
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
     }
 }
