@@ -6,3 +6,5 @@
 [Tue Jun 03 21:35:21 KST 2025] user2 -> user1 : ?
 [Tue Jun 03 21:35:27 KST 2025] user1 -> user2 : 뭔데
 [Tue Jun 03 21:35:30 KST 2025] user2 -> user1 : 뭔데 ㅋ
+[Wed Jun 04 10:02:18 KST 2025] user2 -> user1 : 김준서 씨발련
+[Wed Jun 04 10:02:35 KST 2025] user1 -> user2 : 김준서 개 병신년

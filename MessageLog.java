@@ -1,18 +1,31 @@
-import java.io.FileWriter;
-import java.io.IOException;
+import java.io.*;
+import java.util.*;
 
 public class MessageLog {
-    private String filename;
+    private List<String> messages = new ArrayList<>();
 
-    public MessageLog(String filename) {
-        this.filename = filename;
+    public synchronized void add(String msg) {
+        messages.add(msg);
     }
 
-    public synchronized void log(String msg) {
-        try (FileWriter fw = new FileWriter(filename, true)) {
-            fw.write(msg + "\n");
-        } catch (IOException e) {
-            e.printStackTrace();
+    public synchronized List<String> getAll() {
+        return new ArrayList<>(messages);
+    }
+
+    public synchronized void saveToFile(String filename) throws IOException {
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(filename))) {
+            for (String msg : messages) {
+                bw.write(msg);
+                bw.newLine();
+            }
+        }
+    }
+
+    public synchronized void loadFromFile(String filename) throws IOException {
+        messages.clear();
+        try (BufferedReader br = new BufferedReader(new FileReader(filename))) {
+            String line;
+            while ((line = br.readLine()) != null) messages.add(line);
         }
     }
 }
